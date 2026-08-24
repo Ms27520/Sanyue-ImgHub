@@ -93,6 +93,7 @@ export default {
 <style scoped>
 #themeToggle {
   border: 1px solid var(--glass-border);
+  box-sizing: border-box;
   cursor: pointer;
   display: flex;
   align-items: center;
