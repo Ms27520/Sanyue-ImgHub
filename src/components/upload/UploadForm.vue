@@ -34,7 +34,7 @@
                     </svg>
                 </el-icon>
                 <div class="upload-prompt-row">
-                    <div class="el-upload__text" :class="{'upload-list-busy': fileList.length}" v-html="$t('upload.dragUploadText')"></div>
+                    <div class="el-upload__text" :class="{'upload-list-busy': fileList.length}" v-html="$t('upload.dragUploadText', { pasteShortcut })"></div>
                     <el-tooltip :disabled="disableTooltip" :content="$t('upload.selectFolderUpload')" placement="top" :show-after="1000">
                         <button
                             type="button"
@@ -348,6 +348,10 @@ computed: {
     },
     disableTooltip() {
         return window.innerWidth < 768
+    },
+    pasteShortcut() {
+        const platform = navigator.userAgentData?.platform || navigator.platform || ''
+        return /mac|iphone|ipad|ipod/i.test(platform) ? '⌘ + V' : 'Ctrl + V'
     },
     rootUrl() {
         // 链接前缀，优先级：用户自定义 > urlPrefix > 默认
