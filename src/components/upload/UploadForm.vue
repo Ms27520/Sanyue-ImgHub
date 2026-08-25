@@ -1,5 +1,11 @@
 <template>
     <div class="upload-form">
+        <textarea
+            ref="clipboardPasteReceiver"
+            class="clipboard-paste-receiver"
+            tabindex="-1"
+            aria-hidden="true"
+        ></textarea>
         <div 
             class="upload-card-wrapper"
             @mousemove="handleUploadCardMouseMove"
@@ -282,6 +288,7 @@ data() {
         maxConcurrentUploads: 6, // 最大并发上传数
         // 取消上传控制
         abortControllers: new Map(), // 存储每个文件的 AbortController
+        pasteFocusTarget: null,
     }
 },
 watch: {
@@ -356,10 +363,12 @@ computed: {
 },
 mounted() {
     document.addEventListener('paste', this.handlePaste)
+    document.addEventListener('keydown', this.handlePasteShortcut)
     this.autoReUpload = this.storeAutoReUpload
 },
 beforeUnmount() {
     document.removeEventListener('paste', this.handlePaste)
+    document.removeEventListener('keydown', this.handlePasteShortcut)
     // 清理状态
     this.uploadQueue = []
     this.fileList = []
@@ -1087,25 +1096,86 @@ methods: {
             })
         }
     },
+    isEditablePasteTarget(target) {
+        const element = target?.nodeType === Node.TEXT_NODE ? target.parentElement : target
+        if (!element) return false
+
+        const tagName = element.tagName
+        return tagName === 'INPUT'
+            || tagName === 'TEXTAREA'
+            || element.isContentEditable
+            || Boolean(element.closest?.('[contenteditable="true"]'))
+    },
+    handlePasteShortcut(event) {
+        const isPasteShortcut = (event.ctrlKey || event.metaKey)
+            && !event.altKey
+            && String(event.key).toLowerCase() === 'v'
+        if (!isPasteShortcut || this.isEditablePasteTarget(event.target)) return
+
+        const receiver = this.$refs.clipboardPasteReceiver
+        if (!receiver) return
+
+        this.pasteFocusTarget = document.activeElement
+        receiver.value = ''
+        try {
+            receiver.focus({ preventScroll: true })
+        } catch {
+            receiver.focus()
+        }
+    },
+    releasePasteReceiver(target) {
+        const receiver = this.$refs.clipboardPasteReceiver
+        if (!receiver || target !== receiver) return
+
+        receiver.value = ''
+        const focusTarget = this.pasteFocusTarget
+        this.pasteFocusTarget = null
+        setTimeout(() => {
+            if (focusTarget?.isConnected && typeof focusTarget.focus === 'function') {
+                try {
+                    focusTarget.focus({ preventScroll: true })
+                } catch {
+                    focusTarget.focus()
+                }
+            } else {
+                receiver.blur()
+            }
+            if (document.activeElement === receiver) receiver.blur()
+        }, 0)
+    },
     async handlePaste(event) {
         // 当粘贴位置是文本框时，不执行该操作
-        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+        const isPasteReceiver = event.target === this.$refs.clipboardPasteReceiver
+        if (!isPasteReceiver && this.isEditablePasteTarget(event.target)) {
             return
         }
         const clipboardData = event.clipboardData
-        if (!clipboardData) return
+        if (!clipboardData) {
+            this.releasePasteReceiver(event.target)
+            return
+        }
 
         const items = Array.from(clipboardData.items || [])
         const fileItems = items.filter(item => item.kind === 'file')
         const stringItems = items.filter(item => item.kind === 'string')
+        const fileEntries = filesToUploadEntries(clipboardData.files || [])
 
-        if (fileItems.length > 0) {
+        if (isPasteReceiver) event.preventDefault()
+        this.releasePasteReceiver(event.target)
+
+        if (fileEntries.length > 0 || fileItems.length > 0) {
             event.preventDefault()
-            const entries = await collectFilesFromDataTransferItems(fileItems)
+            let entries = []
+            if (fileItems.length) {
+                try {
+                    entries = await collectFilesFromDataTransferItems(fileItems)
+                } catch (error) {
+                    console.warn('Failed to parse clipboard items, falling back to clipboard files:', error)
+                }
+            }
+            // Safari may expose file items without supporting their entry APIs.
+            if (!entries.length) entries = fileEntries
             if (entries.length) await this.uploadLocalEntries(entries)
-        } else if (clipboardData.files?.length) {
-            event.preventDefault()
-            await this.uploadLocalEntries(filesToUploadEntries(clipboardData.files))
         }
 
         if (stringItems.length > 0) this.uploadFromUrl(stringItems)
@@ -1676,6 +1746,18 @@ beforeDestroy() {
 
 .folder-upload-input {
     display: none;
+}
+
+.clipboard-paste-receiver {
+    position: fixed;
+    top: 0;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .upload-prompt-row {
