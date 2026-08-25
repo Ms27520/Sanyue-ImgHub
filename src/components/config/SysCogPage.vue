@@ -222,16 +222,17 @@ mounted() {
     .then((response) => response.json())
     .then((data) => {
         this.settings = data;
-        // 处理布尔类型的值初始化
+        // 初始化配置项默认值，并规范化布尔类型
         if (this.settings.config) {
             this.settings.config.forEach(setting => {
+                if ((setting.value === undefined || setting.value === null || setting.value === '')
+                    && setting.default !== undefined) {
+                    setting.value = setting.default;
+                }
                 if (setting.type === 'boolean') {
                     // 将字符串转换为布尔值
                     if (typeof setting.value === 'string') {
                         setting.value = setting.value === 'true';
-                    } else if (setting.value === undefined || setting.value === null) {
-                        // 如果没有值，使用默认值
-                        setting.value = setting.default || false;
                     }
                 }
             });

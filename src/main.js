@@ -11,7 +11,7 @@ import fontAwesomeIcons from './utils/fontawesomeIcons';
 import App from './App.vue'
 import router from './router'
 import store from './store'
-import i18n from './locales'
+import i18n, { initializeLocale } from './locales'
 
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import 'element-plus/theme-chalk/dark/css-vars.css'
@@ -102,6 +102,9 @@ const presetSiteIcon = (isDarkMode, userConfig) => {
 };
 
 store.dispatch('fetchUserConfig').then(() => {
+    // 优先恢复用户选择；没有持久化选择时使用网页默认语言
+    initializeLocale(store.getters.userConfig?.defaultLanguage);
+
     // 初始化时应用 dark 模式
     initDarkModeClass();
 
@@ -129,5 +132,6 @@ store.dispatch('fetchUserConfig').then(() => {
     app.use(store).use(router).use(ElementPlus).use(i18n).mount('#app');
 }).catch(error => {
     console.error('Failed to load user configuration:', error);
+    initializeLocale();
     app.use(store).use(router).use(ElementPlus).use(i18n).use(head).mount('#app');
 })
