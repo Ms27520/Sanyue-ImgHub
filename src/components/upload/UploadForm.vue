@@ -351,7 +351,7 @@ computed: {
     },
     pasteShortcut() {
         const platform = navigator.userAgentData?.platform || navigator.platform || ''
-        return /mac|iphone|ipad|ipod/i.test(platform) ? '⌘ + V' : 'Ctrl + V'
+        return /mac|iphone|ipad|ipod/i.test(platform) ? 'Cmd + V' : 'Ctrl + V'
     },
     rootUrl() {
         // 链接前缀，优先级：用户自定义 > urlPrefix > 默认
