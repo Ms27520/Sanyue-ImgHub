@@ -1244,10 +1244,26 @@ export default {
   box-shadow: var(--glass-shadow);
   border: 1px solid var(--glass-border);
   cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  will-change: transform;
 }
 
-.overview-card:hover {
-  box-shadow: var(--glass-shadow);
+.overview-card:hover,
+.overview-card:focus-within {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--el-text-color-primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--primary-color) 35%, var(--glass-border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overview-card {
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+
+  .overview-card:hover,
+  .overview-card:focus-within {
+    transform: none;
+  }
 }
 
 .card-icon {
