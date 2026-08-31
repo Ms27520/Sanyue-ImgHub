@@ -1,5 +1,31 @@
 <template>
   <div class="status-panel" v-loading="loading">
+    <!-- 动态问候与系统运行摘要 -->
+    <section
+      class="status-hero"
+      :class="`is-${systemHealthState}`"
+      :aria-label="$t('sysStatus.systemOverview')"
+    >
+      <div class="status-hero-copy">
+        <div class="status-hero-kicker">
+          <span class="system-health-badge" aria-live="polite">
+            <span class="system-health-dot" aria-hidden="true"></span>
+            {{ systemHealthLabel }}
+          </span>
+          <span class="status-hero-date">{{ currentDateLabel }}</span>
+        </div>
+
+        <h1 class="status-hero-title">{{ greetingTitle }}</h1>
+        <p class="status-hero-summary" aria-live="polite">{{ systemStatusSummary }}</p>
+      </div>
+
+      <div class="status-hero-time-card">
+        <span class="status-hero-time-caption">{{ $t('sysStatus.localTime') }}</span>
+        <time class="status-hero-time" :datetime="currentTime.toISOString()">{{ currentTimeLabel }}</time>
+        <span class="status-hero-timezone">{{ timeZoneLabel }}</span>
+      </div>
+    </section>
+
     <!-- 顶部概览卡片 -->
     <div class="overview-cards">
       <div class="overview-card total-files" @click="fetchIndexInfo">
@@ -423,6 +449,10 @@ export default {
       backing: false,
       restoring: false,
       indexInfo: {},
+      indexInfoLoaded: false,
+      indexInfoError: false,
+      currentTime: new Date(),
+      clockTimer: null,
       version: packageInfo.version, // 从package.json获取版本号
       loadErrors: {
         newest: false,
@@ -461,6 +491,72 @@ export default {
     }
   },
   computed: {
+    currentLocale() {
+      return String(this.$i18n.locale || 'zh-CN')
+    },
+    indexedFileCount() {
+      return Number(this.indexInfo.totalFiles || 0)
+    },
+    uploadChannelCount() {
+      return Object.keys(this.indexInfo.channelStats || {}).length
+    },
+    systemHealthState() {
+      if (this.indexInfoError) return 'attention'
+      if (!this.indexInfoLoaded) return 'checking'
+      return 'healthy'
+    },
+    systemHealthLabel() {
+      return this.$t(`sysStatus.health${this.systemHealthState.charAt(0).toUpperCase()}${this.systemHealthState.slice(1)}`)
+    },
+    greetingTitle() {
+      const hour = this.currentTime.getHours()
+      if (hour < 5) return this.$t('sysStatus.greetingLateNight')
+      if (hour < 11) return this.$t('sysStatus.greetingMorning')
+      if (hour < 14) return this.$t('sysStatus.greetingNoon')
+      if (hour < 18) return this.$t('sysStatus.greetingAfternoon')
+      if (hour < 23) return this.$t('sysStatus.greetingEvening')
+      return this.$t('sysStatus.greetingLateNight')
+    },
+    systemStatusSummary() {
+      if (this.indexInfoError) return this.$t('sysStatus.summaryUnavailable')
+      if (!this.indexInfoLoaded) return this.$t('sysStatus.summaryChecking')
+      if (this.indexedFileCount === 0) return this.$t('sysStatus.summaryEmpty')
+      if (this.uploadChannelCount === 0) {
+        return this.$t('sysStatus.summaryIndexed', {
+          files: this.indexedFileCount.toLocaleString(this.currentLocale)
+        })
+      }
+      return this.$t('sysStatus.summaryHealthy', {
+        files: this.indexedFileCount.toLocaleString(this.currentLocale),
+        channels: this.uploadChannelCount.toLocaleString(this.currentLocale)
+      })
+    },
+    currentDateLabel() {
+      return new Intl.DateTimeFormat(this.currentLocale, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long'
+      }).format(this.currentTime)
+    },
+    currentTimeLabel() {
+      return new Intl.DateTimeFormat(this.currentLocale, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(this.currentTime)
+    },
+    timeZoneLabel() {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || this.$t('sysStatus.localTimezone')
+      const offsetMinutes = -this.currentTime.getTimezoneOffset()
+      const sign = offsetMinutes >= 0 ? '+' : '-'
+      const absoluteMinutes = Math.abs(offsetMinutes)
+      const hours = Math.floor(absoluteMinutes / 60)
+      const minutes = absoluteMinutes % 60
+      const offset = minutes === 0 ? `UTC${sign}${hours}` : `UTC${sign}${hours}:${String(minutes).padStart(2, '0')}`
+      return `${timeZone} · ${offset}`
+    },
     // 渠道分布图表数据
     channelChartData() {
       const stats = this.indexInfo.channelStats || {}
@@ -713,6 +809,15 @@ export default {
   },
   mounted() {
     this.fetchIndexInfo()
+    this.clockTimer = window.setInterval(() => {
+      this.currentTime = new Date()
+    }, 1000)
+  },
+  beforeUnmount() {
+    if (this.clockTimer) {
+      window.clearInterval(this.clockTimer)
+      this.clockTimer = null
+    }
   },
   methods: {
     // 获取渠道图表颜色
@@ -803,6 +908,7 @@ export default {
     // 获取索引信息
     async fetchIndexInfo() {
       this.loading = true
+      this.indexInfoError = false
       try {
         const { startDate, endDate } = this.getTrendDateRangeParams()
         const params = new URLSearchParams({
@@ -820,11 +926,13 @@ export default {
         if (response.ok) {
           const data = await response.json()
           this.indexInfo = data
+          this.indexInfoLoaded = true
         } else {
           throw new Error('API请求失败')
         }
       } catch (error) {
         console.error('获取索引信息失败:', error)
+        this.indexInfoError = true
         this.$message.error(this.$t('sysStatus.fetchIndexFailed'))
       } finally {
         this.loading = false
@@ -1225,6 +1333,191 @@ export default {
   padding: 20px;
   background: transparent;
   min-height: 100vh;
+}
+
+/* 动态问候与系统运行摘要 */
+.status-hero {
+  --hero-status-color: var(--el-color-success);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 42px;
+  margin-bottom: 8px;
+  padding: 28px 12px 34px;
+  color: var(--admin-container-color);
+}
+
+.status-hero::before,
+.status-hero::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.status-hero::before {
+  inset: 0;
+  opacity: 0.34;
+  background-image:
+    radial-gradient(circle at 64% 52%, color-mix(in srgb, var(--primary-color) 9%, transparent), transparent 28%),
+    linear-gradient(color-mix(in srgb, var(--primary-color) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--primary-color) 16%, transparent) 1px, transparent 1px);
+  background-size: auto, 34px 34px, 34px 34px;
+  mask-image: linear-gradient(90deg, transparent 28%, #000 72%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 28%, #000 72%, transparent 100%);
+}
+
+.status-hero::after {
+  width: 150px;
+  height: 150px;
+  top: 50%;
+  right: 31%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  filter: blur(20px);
+  transform: translateY(-50%);
+}
+
+.status-hero.is-checking {
+  --hero-status-color: var(--el-color-warning);
+}
+
+.status-hero.is-attention {
+  --hero-status-color: var(--el-color-danger);
+}
+
+.status-hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.status-hero-kicker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 15px;
+}
+
+.system-health-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  color: var(--hero-status-color);
+  background: color-mix(in srgb, var(--hero-status-color) 10%, var(--glass-bg));
+  border: 1px solid color-mix(in srgb, var(--hero-status-color) 24%, var(--glass-border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.system-health-dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  background: currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.system-health-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid currentColor;
+  border-radius: inherit;
+  animation: healthPulse 2s ease-out infinite;
+}
+
+.status-hero-date {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.status-hero-title {
+  margin: 0;
+  color: var(--admin-container-color);
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 750;
+  line-height: 1.18;
+  letter-spacing: -0.035em;
+}
+
+.status-hero-summary {
+  max-width: 720px;
+  margin: 12px auto 0;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.status-hero-time-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 250px;
+  min-width: 250px;
+  padding: 12px 0 12px 32px;
+  border-left: 1px solid color-mix(in srgb, var(--el-text-color-primary) 10%, transparent);
+  box-sizing: border-box;
+}
+
+.status-hero-time-caption {
+  color: var(--el-text-color-secondary);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.status-hero-time {
+  margin-top: 7px;
+  color: var(--admin-container-color);
+  font-size: clamp(28px, 3vw, 36px);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.status-hero-timezone {
+  margin-top: 10px;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: 10px;
+  line-height: 1.4;
+  opacity: 0.78;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes healthPulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.75);
+  }
+  75%, 100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .system-health-dot::after {
+    animation: none;
+  }
 }
 
 /* 概览卡片 */
@@ -1954,6 +2247,24 @@ html.dark .legend-item:hover {
   .status-panel {
     padding: 15px;
   }
+
+  .status-hero {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 24px 8px 30px;
+  }
+
+  .status-hero-time-card {
+    width: 100%;
+    min-width: 0;
+    padding: 18px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--el-text-color-primary) 10%, transparent);
+    border-left: 0;
+  }
+
+  .status-hero-time {
+    font-size: 32px;
+  }
   
   .overview-cards {
     grid-template-columns: 1fr;
@@ -2025,6 +2336,17 @@ html.dark .legend-item:hover {
     width: 100%;
     min-width: unset;
   }
+}
+
+@media (max-width: 480px) {
+  .status-hero {
+    padding: 21px 4px 28px;
+  }
+
+  .status-hero-title {
+    font-size: 27px;
+  }
+
 }
 
 /* 加载动画 */
