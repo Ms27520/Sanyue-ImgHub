@@ -1582,10 +1582,15 @@ export default {
   background: color-mix(in srgb, var(--el-text-color-primary) 3%, transparent);
   border: 1px solid var(--glass-border);
   border-radius: 8px;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  will-change: transform;
 }
 
 .legend-item:hover {
-  background: color-mix(in srgb, var(--el-text-color-primary) 3%, transparent);
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--glass-bg));
+  border-color: color-mix(in srgb, var(--primary-color) 30%, var(--glass-border));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--el-text-color-primary) 12%, transparent);
 }
 
 html.dark .legend-item {
@@ -1593,7 +1598,17 @@ html.dark .legend-item {
 }
 
 html.dark .legend-item:hover {
-  background: color-mix(in srgb, var(--el-text-color-primary) 5%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 12%, var(--glass-bg));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legend-item {
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .legend-item:hover {
+    transform: none;
+  }
 }
 
 .legend-color {
